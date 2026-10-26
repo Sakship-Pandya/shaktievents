@@ -1,0 +1,693 @@
+// Shree Shakti — data model.
+// Localised content is stored as paired *_en / *_gu columns; long-form rich
+// text and repeatable structures are Json validated by zod in lib/schemas.
+// `seo Json?` holds { title_en, title_gu, description_en, description_gu,
+// ogImage, noindex } — see lib/schemas/seo.ts.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  EDITOR
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  SITE_VISIT
+  QUOTED
+  BOOKED
+  LOST
+}
+
+/// Feeds the public availability checker.
+enum DayStatus {
+  AVAILABLE
+  LIMITED
+  BOOKED
+}
+
+enum MediaRole {
+  COVER
+  GALLERY
+  BEFORE
+  AFTER
+  PANORAMA
+}
+
+enum TestimonialKind {
+  TEXT
+  VIDEO
+}
+
+enum FaqScope {
+  GLOBAL
+  HOME
+  SERVICE
+  EVENT_TYPE
+  AREA
+  PACKAGE
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Auth.js + credentials)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  /// bcrypt hash. Null for OAuth-only accounts.
+  passwordHash  String?
+  role          Role      @default(EDITOR)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  auditLogs         AuditLog[]
+  enquiryNotes      EnquiryNote[]
+  assignedEnquiries Enquiry[]     @relation("EnquiryAssignee")
+  blogPosts         BlogPost[]
+
+  @@index([role])
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+/// Throttles credential logins per email+IP. Cleared on success.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  count     Int      @default(0)
+  blockedAt DateTime?
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Settings & site-wide content
+// ---------------------------------------------------------------------------
+
+/// Single row, id "singleton". Mirrors lib/site.ts exactly — the public site
+/// reads NAP from here so the footer, contact page and JSON-LD cannot drift.
+model SiteSettings {
+  id                       String   @id @default("singleton")
+  businessName             String
+  shortName                String
+  phonePrimary             String?
+  phoneSecondary           String?
+  whatsappNumber           String?
+  email                    String?
+  addressLine              String?
+  area                     String?
+  city                     String   @default("Surendranagar")
+  district                 String   @default("Surendranagar")
+  state                    String   @default("Gujarat")
+  pin                      String   @default("363001")
+  googleMapsUrl            String?
+  googleBusinessProfileUrl String?
+  establishedYear          Int?
+  ownerName                String?
+  gstNo                    String?
+  logoUrl                  String?
+  instagram                String?
+  facebook                 String?
+  youtube                  String?
+  eventsCompleted          Int?
+  teamSize                 Int?
+  townsServed              Int?
+  whatsappDefaultMessage   String?
+  /// { mon: "09:00-21:00", ... } — null until the client confirms.
+  openingHours             Json?
+  /// Instagram, 360 viewer, style explorer, countdown, popup.
+  featureFlags             Json?
+  /// Base rates, guest bands, season and distance multipliers.
+  estimatorRules           Json?
+  /// Muhurat dates for the countdown banner.
+  muhuratDates             Json?
+  /// Long-lived Instagram Graph API token. Expires every ~60 days, so the
+  /// client refreshes it here rather than needing a redeploy.
+  instagramToken           String?
+  gaId                     String?
+  gtmId                    String?
+  enquiryToEmails          String[] @default([])
+  updatedAt                DateTime @updatedAt
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  textEn    String
+  textGu    String
+  href      String?
+  isActive  Boolean  @default(false)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+/// Admin-editable UI strings, overriding messages/*.json at runtime.
+model Translation {
+  id     String @id @default(cuid())
+  key    String
+  locale String
+  value  String
+
+  @@unique([key, locale])
+  @@index([locale])
+}
+
+model Redirect {
+  id          String   @id @default(cuid())
+  source      String   @unique
+  destination String
+  permanent   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([source])
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  userId   String?
+  action   String
+  entity   String
+  entityId String?
+  /// Before/after diff, trimmed to what changed.
+  meta     Json?
+  ip       String?
+  at       DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([at])
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+model Service {
+  id        String  @id @default(cuid())
+  slug      String  @unique
+  nameEn    String
+  nameGu    String
+  shortEn   String
+  shortGu   String
+  summaryEn String
+  summaryGu String
+  /// Key into components/brand/icons.tsx serviceIcons.
+  icon      String
+  contentEn Json?
+  contentGu Json?
+  /// [{ en, gu }] — the "What's included" checklist.
+  inclusions Json?
+  /// [{ nameEn, nameGu, descEn, descGu }] — styles / variants.
+  options    Json?
+  /// [{ labelEn, labelGu, value }] — the specs table.
+  specs      Json?
+  /// { fromInr, note_en, note_gu } — hidden on the page when null.
+  pricing    Json?
+  seo        Json?
+  order      Int     @default(0)
+  featured   Boolean @default(false)
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects     Project[]     @relation("ProjectServices")
+  testimonials Testimonial[] @relation("TestimonialServices")
+  faqs         Faq[]
+  packages     Package[]     @relation("PackageServices")
+
+  @@index([isActive, order])
+  @@index([featured])
+}
+
+model EventType {
+  id      String @id @default(cuid())
+  slug    String @unique
+  nameEn  String
+  nameGu  String
+  blurbEn String
+  blurbGu String
+  icon    String
+  introEn Json?
+  introGu Json?
+  seo     Json?
+  order   Int     @default(0)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects     Project[]
+  testimonials Testimonial[]
+  faqs         Faq[]
+
+  @@index([isActive, order])
+}
+
+model Area {
+  id     String @id @default(cuid())
+  slug   String @unique
+  nameEn String
+  nameGu String
+  /// 500-800 words of unique local copy. Thin duplicates get filtered.
+  introEn Json?
+  introGu Json?
+  /// [{ nameEn, nameGu }] — venues we have worked at in this town.
+  venues  Json?
+  lat     Float?
+  lng     Float?
+  /// Minutes from the Surendranagar base. Null until confirmed.
+  travelMinutes Int?
+  seo     Json?
+  order   Int     @default(0)
+  primary Boolean @default(false)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects     Project[]
+  testimonials Testimonial[]
+  faqs         Faq[]
+
+  @@index([isActive, order])
+}
+
+model Package {
+  id         String  @id @default(cuid())
+  slug       String  @unique
+  nameEn     String
+  nameGu     String
+  tagline    String?
+  idealForEn String?
+  idealForGu String?
+  /// [{ en, gu, included: bool }] — drives the comparison matrix.
+  inclusions Json?
+  fromInr    Int?
+  badgeEn    String?
+  badgeGu    String?
+  seo        Json?
+  order      Int     @default(0)
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  services Service[] @relation("PackageServices")
+  faqs     Faq[]
+
+  @@index([isActive, order])
+}
+
+// ---------------------------------------------------------------------------
+// Media & projects
+// ---------------------------------------------------------------------------
+
+model Media {
+  id        String   @id @default(cuid())
+  url       String
+  publicId  String?  @unique
+  altEn     String?
+  altGu     String?
+  width     Int?
+  height    Int?
+  bytes     Int?
+  format    String?
+  folder    String   @default("uploads")
+  tags      String[] @default([])
+  /// Stock or filler, so it can be swept before launch.
+  isPlaceholder Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projectMedia   ProjectMedia[]
+  coverForProject Project[]     @relation("ProjectCover")
+
+  @@index([folder])
+  @@index([createdAt])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  titleEn     String
+  titleGu     String
+  briefEn     Json?
+  briefGu     Json?
+  /// What we did on site.
+  workEn      Json?
+  workGu      Json?
+  clientQuoteEn String?
+  clientQuoteGu String?
+  clientName  String?
+  venue       String?
+  eventDate   DateTime?
+  guests      Int?
+  areaSqft    Int?
+  days        Int?
+  /// YouTube / Reel URLs.
+  videoUrls   String[]      @default([])
+  panoramaUrl String?
+  seo         Json?
+  status      PublishStatus @default(DRAFT)
+  featured    Boolean       @default(false)
+  order       Int           @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  coverId     String?
+  cover       Media?     @relation("ProjectCover", fields: [coverId], references: [id], onDelete: SetNull)
+  eventTypeId String?
+  eventType   EventType? @relation(fields: [eventTypeId], references: [id], onDelete: SetNull)
+  areaId      String?
+  area        Area?      @relation(fields: [areaId], references: [id], onDelete: SetNull)
+
+  services     Service[]      @relation("ProjectServices")
+  media        ProjectMedia[]
+  testimonials Testimonial[]
+
+  @@index([status, featured])
+  @@index([eventTypeId])
+  @@index([areaId])
+  @@index([eventDate])
+}
+
+/// Ordered gallery join — also carries the before/after pair.
+model ProjectMedia {
+  projectId String
+  mediaId   String
+  role      MediaRole @default(GALLERY)
+  order     Int       @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  media   Media   @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, mediaId, role])
+  @@index([projectId, order])
+  @@index([mediaId])
+}
+
+// ---------------------------------------------------------------------------
+// Social proof
+// ---------------------------------------------------------------------------
+
+model Testimonial {
+  id         String          @id @default(cuid())
+  kind       TestimonialKind @default(TEXT)
+  authorName String
+  authorRole String?
+  town       String?
+  quoteEn    String?
+  quoteGu    String?
+  rating     Int?
+  videoUrl   String?
+  /// Pasted from the Google Business Profile.
+  sourceUrl  String?
+  eventDate  DateTime?
+  status     PublishStatus   @default(DRAFT)
+  featured   Boolean         @default(false)
+  order      Int             @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eventTypeId String?
+  eventType   EventType? @relation(fields: [eventTypeId], references: [id], onDelete: SetNull)
+  areaId      String?
+  area        Area?      @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  projectId   String?
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  services Service[] @relation("TestimonialServices")
+
+  @@index([status, featured])
+}
+
+/// Temples, trusts, schools and samaj we have worked for — the "Trusted by" strip.
+model Client {
+  id       String  @id @default(cuid())
+  nameEn   String
+  nameGu   String
+  logoUrl  String?
+  website  String?
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  @@index([isActive, order])
+}
+
+model Video {
+  id         String        @id @default(cuid())
+  titleEn    String
+  titleGu    String
+  youtubeId  String
+  category   String?
+  order      Int           @default(0)
+  status     PublishStatus @default(DRAFT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, order])
+}
+
+// ---------------------------------------------------------------------------
+// Enquiries & bookings
+// ---------------------------------------------------------------------------
+
+model Enquiry {
+  id        String        @id @default(cuid())
+  name      String
+  phone     String
+  email     String?
+  town      String?
+  eventType String?
+  eventDate DateTime?
+  guests    Int?
+  message   String?
+  /// Raw quote-wizard answers and the range we showed them.
+  estimator Json?
+  status    EnquiryStatus @default(NEW)
+  /// Page path the form was submitted from.
+  sourcePath String?
+  utm        Json?
+  ip         String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assigneeId String?
+  assignee   User?         @relation("EnquiryAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  notes      EnquiryNote[]
+
+  @@index([status, createdAt])
+  @@index([phone])
+  @@index([createdAt])
+}
+
+model EnquiryNote {
+  id        String   @id @default(cuid())
+  enquiryId String
+  authorId  String?
+  body      String
+  createdAt DateTime @default(now())
+
+  enquiry Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  author  User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([enquiryId, createdAt])
+}
+
+/// One row per calendar day the client marks. Missing day = AVAILABLE.
+model Booking {
+  id     String    @id @default(cuid())
+  date   DateTime  @unique @db.Date
+  status DayStatus @default(BOOKED)
+  note   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date, status])
+}
+
+// ---------------------------------------------------------------------------
+// Blog & FAQ
+// ---------------------------------------------------------------------------
+
+model Category {
+  id     String @id @default(cuid())
+  slug   String @unique
+  nameEn String
+  nameGu String
+  order  Int    @default(0)
+
+  posts BlogPost[]
+}
+
+model BlogPost {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  titleEn      String
+  titleGu      String
+  excerptEn    String?
+  excerptGu    String?
+  /// Tiptap JSON document.
+  bodyEn       Json?
+  bodyGu       Json?
+  coverUrl     String?
+  readMinutes  Int?
+  seo          Json?
+  status       PublishStatus @default(DRAFT)
+  publishedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  authorId   String?
+  author     User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([status, publishedAt])
+  @@index([categoryId])
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  scope     FaqScope @default(GLOBAL)
+  questionEn String
+  questionGu String
+  answerEn   String
+  answerGu   String
+  order      Int     @default(0)
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  serviceId   String?
+  service     Service?   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  eventTypeId String?
+  eventType   EventType? @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+  areaId      String?
+  area        Area?      @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  packageId   String?
+  package     Package?   @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@index([scope, isActive, order])
+  @@index([serviceId])
+}
+
+// ---------------------------------------------------------------------------
+// Page builder
+// ---------------------------------------------------------------------------
+
+/// One row per public page. Sections are ordered children, so the client can
+/// add or reorder homepage blocks without a deploy.
+model Page {
+  id     String @id @default(cuid())
+  /// "/" for the home page, otherwise the unprefixed path.
+  slug   String @unique
+  titleEn String
+  titleGu String
+  seo    Json?
+  isSystem Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sections PageSection[]
+}
+
+model PageSection {
+  id        String  @id @default(cuid())
+  pageId    String
+  /// Key into the components/sections registry.
+  component String
+  /// Props for that component, validated by the section's zod schema.
+  props     Json?
+  order     Int     @default(0)
+  isVisible Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, order])
+}
