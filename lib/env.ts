@@ -8,8 +8,30 @@ import { z } from 'zod';
  */
 const emptyToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 
+const resolveSiteUrl = (v: unknown) => {
+  const clean = emptyToUndefined(v);
+  if (typeof clean === 'string' && !clean.includes('localhost')) {
+    return clean;
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return clean ?? 'http://localhost:3000';
+};
+
+const resolveAuthUrl = (v: unknown) => {
+  const clean = emptyToUndefined(v);
+  if (process.env.VERCEL && typeof clean === 'string' && clean.includes('localhost')) {
+    return undefined;
+  }
+  return clean;
+};
+
 const clientSchema = z.object({
-  NEXT_PUBLIC_SITE_URL: z.preprocess(emptyToUndefined, z.url().default('http://localhost:3000')),
+  NEXT_PUBLIC_SITE_URL: z.preprocess(resolveSiteUrl, z.string()),
   NEXT_PUBLIC_GA_ID: z.preprocess(emptyToUndefined, z.string().optional()),
   NEXT_PUBLIC_GTM_ID: z.preprocess(emptyToUndefined, z.string().optional()),
   NEXT_PUBLIC_PHONE_PRIMARY: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -19,7 +41,7 @@ const clientSchema = z.object({
 const serverSchema = z.object({
   DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
   AUTH_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
-  AUTH_URL: z.preprocess(emptyToUndefined, z.url().optional()),
+  AUTH_URL: z.preprocess(resolveAuthUrl, z.url().optional()),
   CLOUDINARY_CLOUD_NAME: z.preprocess(emptyToUndefined, z.string().optional()),
   CLOUDINARY_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   CLOUDINARY_API_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
