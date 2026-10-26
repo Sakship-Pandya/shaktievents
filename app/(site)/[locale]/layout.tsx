@@ -16,7 +16,7 @@ import { fontVariables } from '@/lib/fonts';
 import { ogLocale } from '@/lib/seo';
 import { getServiceList } from '@/lib/services-data';
 import { getSiteConfig, toContactInfo } from '@/lib/settings';
-import { routing } from '@/i18n/routing';
+import { routing, type Locale } from '@/i18n/routing';
 import { site } from '@/lib/site';
 
 type LayoutParams = { params: Promise<{ locale: string }> };
@@ -68,8 +68,8 @@ export default async function SiteLayout({
 
   const [siteConfig, services, eventTypes] = await Promise.all([
     getSiteConfig(),
-    getServiceList(locale as any),
-    getEventTypeList(locale as any),
+    getServiceList(locale as Locale),
+    getEventTypeList(locale as Locale),
   ]);
   const contact = toContactInfo(siteConfig);
 
