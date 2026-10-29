@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import { toast } from 'sonner';
 import { toggleProjectStatus } from './actions';
 
 const STATUS_STYLE: Record<string, string> = {
@@ -45,9 +44,8 @@ export function ProjectStatusToggle({
         if (!fallback?.ok) throw new Error('Update failed');
       }
     } catch {
-      // Rollback on genuine network failure
+      // Rollback silently on genuine network failure
       setStatus(prevStatus);
-      toast.error('Failed to change project visibility. Please try again.');
     } finally {
       setIsSyncing(false);
     }
