@@ -61,14 +61,17 @@ const projectSchema = z.object({
  * list it and the home page. Cheaper to clear the tree than to work out which.
  */
 function refresh(slug: string) {
-  revalidatePath('/admin/portfolio');
-  revalidatePath('/admin/projects');
   after(() => {
-    revalidateTag('projects');
-    for (const locale of locales) {
-      revalidatePath(localizedPath(locale, `/portfolio/${slug}`));
+    try {
+      revalidatePath('/admin/portfolio');
+      revalidatePath('/admin/projects');
+      revalidateTag('projects');
+      for (const locale of locales) {
+        revalidatePath(localizedPath(locale, `/portfolio/${slug}`));
+      }
+    } catch (err) {
+      console.error('[refresh] background revalidation error:', err);
     }
-    // revalidatePath('/', 'layout') removed to avoid full app cache purge
   });
 }
 

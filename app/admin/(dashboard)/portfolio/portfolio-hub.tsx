@@ -9,7 +9,6 @@ import {
   EyeOff,
   FolderOpen,
   ImageOff,
-  Loader2,
   Search,
   X,
 } from 'lucide-react';
@@ -63,7 +62,14 @@ export function PortfolioHub({ projects, eventTypes }: Props) {
     setPendingStatusIds((prev) => new Set(prev).add(project.id));
 
     try {
-      await toggleProjectStatus(project.id, nextStatus);
+      const res = await fetch('/api/admin/projects/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: project.id, status: nextStatus }),
+      });
+      if (!res.ok) {
+        await toggleProjectStatus(project.id, nextStatus);
+      }
     } catch {
       // Rollback on network failure
       setItems((prev) =>
@@ -294,14 +300,15 @@ export function PortfolioHub({ projects, eventTypes }: Props) {
                     isVisible
                       ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400'
                       : 'border-border bg-card text-muted-foreground hover:bg-sand hover:text-ink'
-                  } ${isPendingStatus ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  } ${isPendingStatus ? 'opacity-75 cursor-wait' : ''}`}
                 >
-                  {isPendingStatus ? (
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                  ) : isVisible ? (
+                  {isVisible ? (
                     <Eye className="size-4 text-emerald-600 dark:text-emerald-400" />
                   ) : (
                     <EyeOff className="size-4 text-muted-foreground" />
+                  )}
+                  {isPendingStatus && (
+                    <span className="absolute -top-1 -right-1 size-2 rounded-full bg-maroon animate-pulse" />
                   )}
                 </button>
 
