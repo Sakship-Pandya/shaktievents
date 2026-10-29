@@ -202,44 +202,82 @@ export async function saveProject(_prev: ProjectState, formData: FormData): Prom
   return { ok: true, message: 'Project saved.' };
 }
 
-export async function toggleProjectStatus(id: string): Promise<void> {
+export async function toggleProjectStatus(
+  id: string,
+  targetStatus?: 'PUBLISHED' | 'DRAFT' | 'ARCHIVED' | FormData,
+): Promise<{ ok: boolean; status?: 'PUBLISHED' | 'DRAFT' | 'ARCHIVED' }> {
   const user = await requireUser();
-  const project = await db.project.findUnique({
-    where: { id },
-    select: { id: true, slug: true, status: true },
-  });
-  if (!project) return;
 
-  const status = project.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
-  await db.project.update({ where: { id }, data: { status } });
+  let nextStatus: 'PUBLISHED' | 'DRAFT' | 'ARCHIVED';
+  let projectSlug: string;
+
+  if (typeof targetStatus === 'string') {
+    nextStatus = targetStatus;
+    const updated = await db.project.update({
+      where: { id },
+      data: { status: nextStatus },
+      select: { slug: true },
+    });
+    projectSlug = updated.slug;
+  } else {
+    const project = await db.project.findUnique({
+      where: { id },
+      select: { slug: true, status: true },
+    });
+    if (!project) return { ok: false };
+    nextStatus = project.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
+    await db.project.update({ where: { id }, data: { status: nextStatus } });
+    projectSlug = project.slug;
+  }
+
   recordAudit({
     userId: user.id,
     action: 'update',
     entity: 'Project',
     entityId: id,
-    meta: { status },
+    meta: { status: nextStatus },
   });
-  refresh(project.slug);
+  refresh(projectSlug);
+  return { ok: true, status: nextStatus };
 }
 
-export async function toggleProjectFeatured(id: string): Promise<void> {
+export async function toggleProjectFeatured(
+  id: string,
+  targetFeatured?: boolean | FormData,
+): Promise<{ ok: boolean; featured?: boolean }> {
   const user = await requireUser();
-  const project = await db.project.findUnique({
-    where: { id },
-    select: { id: true, slug: true, featured: true },
-  });
-  if (!project) return;
 
-  const featured = !project.featured;
-  await db.project.update({ where: { id }, data: { featured } });
+  let nextFeatured: boolean;
+  let projectSlug: string;
+
+  if (typeof targetFeatured === 'boolean') {
+    nextFeatured = targetFeatured;
+    const updated = await db.project.update({
+      where: { id },
+      data: { featured: nextFeatured },
+      select: { slug: true },
+    });
+    projectSlug = updated.slug;
+  } else {
+    const project = await db.project.findUnique({
+      where: { id },
+      select: { slug: true, featured: true },
+    });
+    if (!project) return { ok: false };
+    nextFeatured = !project.featured;
+    await db.project.update({ where: { id }, data: { featured: nextFeatured } });
+    projectSlug = project.slug;
+  }
+
   recordAudit({
     userId: user.id,
     action: 'update',
     entity: 'Project',
     entityId: id,
-    meta: { featured },
+    meta: { featured: nextFeatured },
   });
-  refresh(project.slug);
+  refresh(projectSlug);
+  return { ok: true, featured: nextFeatured };
 }
 
 export async function deleteProject(id: string) {

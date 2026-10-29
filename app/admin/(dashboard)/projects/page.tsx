@@ -1,18 +1,12 @@
 import type { Metadata } from 'next';
-import { Eye, EyeOff, ImageOff, Plus } from 'lucide-react';
+import { ImageOff, Plus } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { toggleProjectStatus } from './actions';
+import { ProjectStatusToggle } from './project-status-toggle';
 import { db } from '@/lib/db';
 
 export const metadata: Metadata = { title: 'Projects' };
 export const dynamic = 'force-dynamic';
-
-const STATUS_STYLE: Record<string, string> = {
-  PUBLISHED: 'bg-success/15 text-success',
-  DRAFT: 'border border-border text-muted-foreground',
-  ARCHIVED: 'border border-border text-muted-foreground line-through',
-};
 
 export default async function ProjectsAdminPage() {
   const projects = await db.project.findMany({
@@ -103,26 +97,7 @@ export default async function ProjectsAdminPage() {
                 </span>
               </Link>
 
-              <span
-                className={`shrink-0 rounded-full px-2.5 py-1 text-[0.65rem] font-semibold tracking-wide ${STATUS_STYLE[project.status] ?? ''}`}
-              >
-                {project.status === 'PUBLISHED' ? 'Visible' : 'Not Visible'}
-              </span>
-
-              <form action={toggleProjectStatus.bind(null, project.id)}>
-                <button
-                  type="submit"
-                  title={project.status === 'PUBLISHED' ? 'Make Not Visible' : 'Make Visible'}
-                  aria-label={project.status === 'PUBLISHED' ? 'Make Not Visible' : 'Make Visible'}
-                  className="grid size-8 place-items-center rounded-lg border border-border text-ink transition-colors hover:bg-sand"
-                >
-                  {project.status === 'PUBLISHED' ? (
-                    <Eye className="size-4 text-emerald-600" />
-                  ) : (
-                    <EyeOff className="size-4 text-muted-foreground" />
-                  )}
-                </button>
-              </form>
+              <ProjectStatusToggle id={project.id} initialStatus={project.status} />
             </li>
           ))}
         </ul>

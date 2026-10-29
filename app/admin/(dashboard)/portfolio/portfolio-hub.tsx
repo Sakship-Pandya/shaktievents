@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   ExternalLink,
   Eye,
@@ -38,9 +37,6 @@ type Props = {
 type VisibilityFilter = 'ALL' | 'VISIBLE' | 'NOT_VISIBLE';
 
 export function PortfolioHub({ projects, eventTypes }: Props) {
-  const router = useRouter();
-  const [, startTransition] = useTransition();
-
   // Local state for optimistic updates
   const [items, setItems] = useState<PortfolioProject[]>(projects);
   const [search, setSearch] = useState('');
@@ -67,7 +63,7 @@ export function PortfolioHub({ projects, eventTypes }: Props) {
     setPendingStatusIds((prev) => new Set(prev).add(project.id));
 
     try {
-      await toggleProjectStatus(project.id);
+      await toggleProjectStatus(project.id, nextStatus);
     } catch {
       // Rollback on network failure
       setItems((prev) =>
@@ -78,9 +74,6 @@ export function PortfolioHub({ projects, eventTypes }: Props) {
         const next = new Set(prev);
         next.delete(project.id);
         return next;
-      });
-      startTransition(() => {
-        router.refresh();
       });
     }
   };
