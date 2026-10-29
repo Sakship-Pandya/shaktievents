@@ -44,12 +44,6 @@ export function ProjectStatusToggle({
         const fallback = await toggleProjectStatus(id, nextStatus);
         if (!fallback?.ok) throw new Error('Update failed');
       }
-
-      toast.success(
-        nextStatus === 'PUBLISHED'
-          ? 'Project is now visible on website'
-          : 'Project is now hidden from website',
-      );
     } catch {
       // Rollback on genuine network failure
       setStatus(prevStatus);
